@@ -5,19 +5,21 @@ SYSTEM_ARCH := $(shell uname -m | sed -e 's/aarch64.*/arm64/' -e 's/x86_64.*/amd
 export ARCH ?= $(SYSTEM_ARCH)
 
 # Container image version and workload name
-export SDR2MSGHUB_VERSION = 0.0.3
+export SDR2MSGHUB_VERSION = 0.0.4
 export SDR2MSGHUB_NAME = sdr2msghub
 
 # When creating the service definition, we reference these
-export SDR_NAME = sdr
-export GPS_NAME = gps
+export SDR_NAME ?= sdr
+export SDR_VERSION ?= 0.0.7
+export GPS_NAME ?= gps
+export GPS_VERSION ?= 2.0.5
 
 # Construct our Docker registry path and other architecture-dependent values
 DOCKER_NAME ?= $(ARCH)_$(SDR2MSGHUB_NAME)
 export DOCKER_HUB_ID ?= openhorizon
 IMAGE_PATH = $(DOCKER_HUB_ID)/$(DOCKER_NAME):$(SDR2MSGHUB_VERSION)
 
-export MYDOMAIN ?= github.com/open-horizon/examples/wiki
+export MYDOMAIN ?= github.com.open-horizon.examples
 MSGHUB_TOPIC ?= sdr-audio
 
 build: target/build_$(ARCH)

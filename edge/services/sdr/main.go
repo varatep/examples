@@ -24,6 +24,7 @@ func captureAudio(freq int) (audio []byte, err error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	cmd.Env = append(cmd.Env, "RTLSDR_RPC_IS_ENABLED=1", "RTLSDR_RPC_SERV_ADDR=localhost")
 	err = cmd.Start()
 	if err != nil {
 		panic(err)
@@ -68,17 +69,17 @@ func capturePower() (power rtlsdr.PowerDist, err error) {
 	power.Origin = "sdr_hardware"
 	power.Low = float32(start)
 	power.High = float32(end)
+	// rtl_power -e 10 -c 20% -f 70000000:110000000:10000
 	cmd := exec.Command("rtl_power", "-e", "10", "-c", "20%", "-f", strconv.Itoa(start)+":"+strconv.Itoa(end)+":10000")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	fmt.Println("starting command")
+	cmd.Env = append(cmd.Env, "RTLSDR_RPC_IS_ENABLED=1", "RTLSDR_RPC_SERV_ADDR=localhost")
 	err = cmd.Run()
 	if err != nil {
 		err = errors.New(string(stderr.Bytes()))
 		return
 	}
-	fmt.Println("done running command")
 	r := csv.NewReader(bytes.NewReader(stdout.Bytes()))
 	recordList, err := r.ReadAll()
 	if err != nil {
@@ -110,7 +111,11 @@ func makeAudioHandler(fake *bbcfake.FakeRadio) func(w http.ResponseWriter, r *ht
 			audio = fake.GetNextChunk()
 			time.Sleep(30 * time.Second)
 		} else {
-			audio, err = captureAudio(freq)
+			if rtlRpcdIsAlive {
+				audio, err = captureAudio(freq)
+			} else {
+				err = errors.New("freq != 0 but rtl_rpcd is dead")
+			}
 		}
 		if err != nil {
 			fmt.Println(err)
@@ -191,11 +196,28 @@ func freqsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonBytes)
 }
 
+var rtlRpcdIsAlive = true
+
+func startRtlrpcd(onFail func(error)) {
+	cmd := exec.Command("rtl_rpcd")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	startTime := time.Now()
+	fmt.Println("starting rtl_rpcd")
+	err := cmd.Run()
+	fmt.Println("run err:", err)
+	rtlRpcdIsAlive = false
+	fmt.Println("rtl_rpcd stopped after", startTime.Sub(time.Now()), "seconds")
+	onFail(err)
+}
+
 func main() {
 	fake := bbcfake.NewFakeRadio()
-	//chunk := fake.GetNextChunk()
-
-	fmt.Println("starting sdr daemon")
+	go startRtlrpcd(func(err error) {
+		fmt.Println("rtl_rpcd has died:", err.Error())
+		fmt.Println("Requests for audio will now be fulfilled using fake data.")
+	})
 	http.HandleFunc("/audio/", makeAudioHandler(&fake))
 	http.HandleFunc("/power", powerHandler)
 	http.HandleFunc("/freqs", freqsHandler)
